@@ -137,6 +137,14 @@ The server is meant for one machine: it binds `127.0.0.1` by default, rejects re
 `Host` header is not local (a DNS-rebinding guard), and refuses a non-loopback bind unless
 `server.token` is set, in which case every request needs `Authorization: Bearer <token>`.
 
+## Documentation
+
+- [Architecture](docs/architecture.md): the registry, the input projection, cursors, errors, the
+  normalized search layer and the security model of the local server.
+- [Configuration](docs/configuration.md): every key, credential resolution per source, Google
+  OAuth, custom MCP servers and the project file.
+- [Adding a source](docs/adding-a-source.md): the checklist a new source type follows.
+
 ## Development
 
 ```shell
