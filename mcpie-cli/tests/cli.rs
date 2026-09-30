@@ -78,3 +78,41 @@ fn stray_mcpie_environment_variables_are_reported() {
         .code(1)
         .stderr(predicate::str::contains("typo"));
 }
+
+#[test]
+fn custom_mcp_servers_become_sources() {
+    let home = tempfile::tempdir().unwrap();
+    let binary = assert_cmd::cargo::cargo_bin("mcpie");
+    let command = format!(
+        "sources.inner.command=[{:?}, \"mcp\", \"--sources\", \"github\", \"--set\", \"sources.github.token=t\"]",
+        binary.display().to_string()
+    );
+    mcpie(home.path())
+        .args([
+            "--set",
+            "sources.inner.type=mcp",
+            "--set",
+            &command,
+            "ops",
+            "inner",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("github_list_issues"));
+    mcpie(home.path())
+        .args([
+            "--set",
+            "sources.broken.type=mcp",
+            "--set",
+            "sources.broken.command=[\"/nonexistent/mcp-server\"]",
+            "sources",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("broken").and(predicate::str::contains("error")));
+    mcpie(home.path())
+        .args(["--set", "sources.bad.type=mcp", "ops"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("command"));
+}

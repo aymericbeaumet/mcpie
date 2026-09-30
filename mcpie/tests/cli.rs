@@ -9,7 +9,7 @@ use mcpie::facade::cli::{Io, run};
 use mcpie::model::{Registry, SourceOptions};
 use serde_json::{Value, json};
 
-fn build(_: &Config) -> Result<Registry, String> {
+async fn build(_: &Config) -> Result<Registry, String> {
     let mut registry = Registry::new();
     registry
         .register(Arc::new(FakeSource::new("alpha")), SourceOptions::default())
@@ -55,7 +55,7 @@ fn mcpie_with_stdin(args: &[&str], stdin: &str) -> Run {
             stderr: &mut stderr,
             tty: false,
         };
-        runtime.block_on(run(argv, &build, &mut io))
+        runtime.block_on(run(argv, build, &mut io))
     };
     Run {
         code,

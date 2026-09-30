@@ -227,8 +227,8 @@ async fn missing_credentials_are_not_configured() {
     assert!(matches!(error, SourceError::NotConfigured(_)), "{error}");
 }
 
-#[test]
-fn builder_registers_github_instances() {
+#[tokio::test]
+async fn builder_registers_github_instances() {
     let mut config = Config::default();
     config.sources.insert(
         "ghe".into(),
@@ -239,7 +239,7 @@ fn builder_registers_github_instances() {
         },
     );
     config.sources.get_mut("github").unwrap().tools = vec!["get_*".into()];
-    let registry = build(&config).unwrap();
+    let registry = build(&config).await.unwrap();
     assert!(registry.source("github").is_some());
     assert!(registry.source("ghe").is_some());
     let exposed = registry.select(&Selection::default()).unwrap();
@@ -266,7 +266,13 @@ fn builder_registers_github_instances() {
         .unwrap()
         .extra
         .insert("bogus".into(), json!(1));
-    assert!(build(&config).unwrap_err().to_string().contains("bogus"));
+    assert!(
+        build(&config)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("bogus")
+    );
 }
 
 fn github_with_defaults(server: &MockServer) -> Registry {

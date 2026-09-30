@@ -4,6 +4,12 @@ use std::process::ExitCode;
 
 use mcpie::facade::cli::{Io, run};
 
+async fn build_registry(config: &mcpie::config::Config) -> Result<mcpie::model::Registry, String> {
+    mcpie::sources::build(config)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn main() -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -28,8 +34,6 @@ fn main() -> ExitCode {
         stderr: &mut stderr,
         tty,
     };
-    let build =
-        |config: &mcpie::config::Config| mcpie::sources::build(config).map_err(|e| e.to_string());
-    let code = runtime.block_on(run(args, &build, &mut io));
+    let code = runtime.block_on(run(args, build_registry, &mut io));
     ExitCode::from(code)
 }

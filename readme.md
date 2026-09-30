@@ -56,6 +56,38 @@ Paginated operations return `next_cursor`; pass it back as `--cursor`, or use `-
 Any operation also accepts `--input '{...}'`, `--input .json` or `--input -` (stdin), and
 `mcpie describe github list-issues` prints the full schema.
 
+## Sources
+
+| Source | Type | Credentials |
+|---|---|---|
+| GitHub | `github` | `token`, `GITHUB_TOKEN`/`GH_TOKEN`, or `gh auth login` |
+| Slack | `slack` | `token` or `SLACK_TOKEN` (`xoxp-` user tokens can search, `xoxb-` bot tokens cannot) |
+| Linear | `linear` | `token` or `LINEAR_API_KEY` |
+| Google Drive | `gdrive` | `mcpie auth gdrive` with your own OAuth client, or `token_command = "gcloud auth application-default print-access-token"` |
+| Gmail | `gmail` | `mcpie auth gmail`, or the same `gcloud` command |
+| Any MCP server | `mcp` | whatever the server needs |
+
+Every source has a `request` operation for raw read-only calls, and every list operation
+paginates the same way. Instances are named by their config key, so two GitHub hosts or several
+MCP servers can coexist:
+
+```toml
+[sources.ghe]
+type = "github"
+base_url = "https://github.example.com/api/v3"
+token_command = "op read op://work/ghe/token"
+
+[sources.notion]
+type = "mcp"
+command = ["npx", "-y", "/notion-mcp-server"]
+env = { NOTION_TOKEN = "ntn_..." }
+# tools without a readOnlyHint stay hidden unless you vouch for them:
+trusted_read_only = ["API-get-*", "API-post-search"]
+```
+
+A checked-in `.mcpie.toml` in a repository may set `enabled`, `tools` and `default_*` keys for
+each source (a default owner and repo, for instance) but never credentials or commands.
+
 ## AI agents (MCP)
 
 The same registry is an MCP server. With Claude Code:

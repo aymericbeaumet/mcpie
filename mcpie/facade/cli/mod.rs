@@ -218,11 +218,12 @@ impl CliError {
     }
 }
 
-/// Builds the registry for a loaded configuration.
-pub type RegistryBuilder<'a> = &'a dyn Fn(&Config) -> Result<Registry, String>;
-
-/// Run the CLI end to end and return the process exit code.
-pub async fn run(args: Vec<OsString>, build: RegistryBuilder<'_>, io: &mut Io<'_>) -> u8 {
+/// Run the CLI end to end and return the process exit code. `build` turns the loaded
+/// configuration into the registry (the binary passes `mcpie::sources::build`).
+pub async fn run<B>(args: Vec<OsString>, build: B, io: &mut Io<'_>) -> u8
+where
+    B: AsyncFn(&Config) -> Result<Registry, String>,
+{
     match run_inner(args, build, io).await {
         Ok(()) => 0,
         Err(CliError::Io(error)) if error.kind() == std::io::ErrorKind::BrokenPipe => 0,
@@ -234,11 +235,10 @@ pub async fn run(args: Vec<OsString>, build: RegistryBuilder<'_>, io: &mut Io<'_
     }
 }
 
-async fn run_inner(
-    args: Vec<OsString>,
-    build: RegistryBuilder<'_>,
-    io: &mut Io<'_>,
-) -> Result<(), CliError> {
+async fn run_inner<B>(args: Vec<OsString>, build: B, io: &mut Io<'_>) -> Result<(), CliError>
+where
+    B: AsyncFn(&Config) -> Result<Registry, String>,
+{
     let (config_path, sets) = prescan(&args);
     let loaded = config::load(&Loader {
         config_path,
@@ -247,7 +247,7 @@ async fn run_inner(
         read_env: true,
     })
     .map_err(|e| CliError::Failure(e.to_string()))?;
-    let registry = std::sync::Arc::new(build(&loaded.config).map_err(CliError::Failure)?);
+    let registry = std::sync::Arc::new(build(&loaded.config).await.map_err(CliError::Failure)?);
     let mut command = dynamic::build_command(Cli::command(), &registry);
     let matches = match command.clone().try_get_matches_from(&args) {
         Ok(matches) => matches,

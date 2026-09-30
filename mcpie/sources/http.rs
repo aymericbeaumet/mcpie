@@ -116,7 +116,7 @@ fn map_reqwest_error(error: reqwest::Error) -> SourceError {
     SourceError::Transport(error.to_string())
 }
 
-fn install_crypto_provider() {
+pub(crate) fn install_crypto_provider() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();

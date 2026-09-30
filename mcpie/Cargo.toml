@@ -26,7 +26,7 @@ form_urlencoded = "1"
 futures = "0.3"
 globset = "0.4"
 open = "5"
-rmcp = { version = "3.5", default-features = false, features = ["client", "server", "transport-async-rw", "transport-io"] }
+rmcp = { version = "3.5", default-features = false, features = ["client", "server", "transport-async-rw", "transport-child-process", "transport-io", "transport-streamable-http-client-reqwest"] }
 reqwest = { version = "0.13", default-features = false, features = ["charset", "form", "gzip", "http2", "json", "query", "rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 schemars = { version = "1", features = ["chrono04"] }
@@ -42,6 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 form_urlencoded = "1"
+globset = "0.4"
 httpmock = "0.8"
 figment = { version = "0.10", features = ["env", "test", "toml"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
