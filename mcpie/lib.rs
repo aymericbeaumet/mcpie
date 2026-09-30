@@ -4,6 +4,7 @@
 //! Everything is generated from one runtime registry of sources and operations; the
 //! interfaces are thin projections of that registry. See [`model`] for the registry contract.
 
+pub mod config;
 pub mod model;
 
 /// The program name used in help output, user agents and configuration paths.
