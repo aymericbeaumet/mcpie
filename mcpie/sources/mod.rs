@@ -2,6 +2,7 @@
 
 pub mod github;
 pub mod http;
+pub mod slack;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -68,7 +69,10 @@ pub fn build(config: &Config) -> Result<Registry, BuildError> {
             "github" => {
                 registry.register(Arc::new(github::Github::new(settings, source)?), options)?
             }
-            "slack" | "linear" | "gdrive" | "gmail" | "mcp" => {
+            "slack" => {
+                registry.register(Arc::new(slack::Slack::new(settings, source)?), options)?
+            }
+            "linear" | "gdrive" | "gmail" | "mcp" => {
                 // Source types that are not built yet are known but skipped.
             }
             other => {
