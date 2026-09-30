@@ -82,6 +82,19 @@ pub struct Registry {
     entries: BTreeMap<String, Entry>,
 }
 
+impl std::fmt::Debug for Registry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(self.entries.iter().map(|(id, e)| {
+                (
+                    id,
+                    (e.source.kind(), e.enabled, e.source.operations().len()),
+                )
+            }))
+            .finish()
+    }
+}
+
 impl Registry {
     pub fn new() -> Self {
         Self::default()
