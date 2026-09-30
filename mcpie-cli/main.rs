@@ -16,14 +16,16 @@ fn main() -> ExitCode {
         }
     };
     let args: Vec<OsString> = std::env::args_os().collect();
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let stderr = std::io::stderr();
+    // The handles are deliberately not locked: `mcpie mcp` hands stdin and stdout to the MCP
+    // transport, which takes the same locks internally.
+    let mut stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    let mut stderr = std::io::stderr();
     let tty = stdout.is_terminal();
     let mut io = Io {
-        stdin: &mut stdin.lock(),
-        stdout: &mut stdout.lock(),
-        stderr: &mut stderr.lock(),
+        stdin: &mut stdin,
+        stdout: &mut stdout,
+        stderr: &mut stderr,
         tty,
     };
     let build =

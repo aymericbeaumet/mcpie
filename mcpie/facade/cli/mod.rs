@@ -86,6 +86,28 @@ pub enum StaticCommand {
         #[arg(long)]
         raw: bool,
     },
+    /// serve the registry as an mcp server over stdin/stdout
+    Mcp {
+        /// tools: one tool per operation; meta: list_operations, describe_operation, call_operation
+        #[arg(long, value_enum, default_value_t = ModeArg::Tools)]
+        mode: ModeArg,
+        /// only these sources (comma-separated); default: every source with credentials
+        #[arg(long = "sources", value_delimiter = ',', value_name = "ID,ID")]
+        sources: Vec<String>,
+        /// only operations matching these globs, e.g. list_*,github.get_issue
+        #[arg(long = "tools", value_delimiter = ',', value_name = "GLOB,GLOB")]
+        tools: Vec<String>,
+        /// hide operations matching these globs
+        #[arg(
+            long = "exclude-tools",
+            value_delimiter = ',',
+            value_name = "GLOB,GLOB"
+        )]
+        exclude_tools: Vec<String>,
+        /// expose every enabled source, even ones whose credentials are missing
+        #[arg(long)]
+        all: bool,
+    },
     /// show, locate or create the configuration file
     Config {
         #[command(subcommand)]
@@ -106,6 +128,21 @@ pub enum ConfigAction {
     Path,
     /// write a commented template to the user configuration path
     Init,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ModeArg {
+    Tools,
+    Meta,
+}
+
+impl From<ModeArg> for crate::facade::mcp::Mode {
+    fn from(mode: ModeArg) -> Self {
+        match mode {
+            ModeArg::Tools => Self::Tools,
+            ModeArg::Meta => Self::Meta,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -196,7 +233,7 @@ async fn run_inner(
         read_env: true,
     })
     .map_err(|e| CliError::Failure(e.to_string()))?;
-    let registry = build(&loaded.config).map_err(CliError::Failure)?;
+    let registry = std::sync::Arc::new(build(&loaded.config).map_err(CliError::Failure)?);
     let mut command = dynamic::build_command(Cli::command(), &registry);
     let matches = match command.clone().try_get_matches_from(&args) {
         Ok(matches) => matches,
@@ -296,6 +333,48 @@ async fn run_inner(
             } else {
                 Ok(())
             }
+        }
+        Some(StaticCommand::Mcp {
+            mode,
+            sources,
+            tools,
+            exclude_tools,
+            all,
+        }) => {
+            let sources = if !sources.is_empty() {
+                Some(sources)
+            } else if all {
+                None
+            } else {
+                let hidden = crate::facade::mcp::unconfigured_sources(&registry, &ctx).await;
+                for id in &hidden {
+                    tracing::info!(source = %id, "hidden: no credentials (use --all or --sources to expose)");
+                }
+                Some(
+                    registry
+                        .sources()
+                        .map(|s| s.id().to_owned())
+                        .filter(|id| !hidden.contains(id))
+                        .collect(),
+                )
+            };
+            let selection = crate::model::Selection {
+                sources,
+                tools,
+                exclude_tools,
+                include_write: false,
+            };
+            let server = crate::facade::mcp::McpServer::new(
+                registry.clone(),
+                &selection,
+                mode.into(),
+                ctx.timeout,
+            )
+            .map_err(|e| CliError::Failure(e.to_string()))?;
+            tracing::info!(tools = server.tools().len(), mode = ?server.mode(), "serving mcp on stdio");
+            crate::facade::mcp::serve_stdio(server)
+                .await
+                .map_err(CliError::Failure)
         }
         Some(StaticCommand::Config { action }) => match action {
             ConfigAction::Show => emit_value(io, &commands::config_show(&loaded)?, value_format),

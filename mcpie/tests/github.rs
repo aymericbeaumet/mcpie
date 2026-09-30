@@ -250,7 +250,13 @@ fn builder_registers_github_instances() {
             .iter()
             .map(|o| o.name.as_str())
             .collect::<Vec<_>>(),
-        ["get_viewer", "get_repo", "get_issue", "get_pull_request", "get_file_content"]
+        [
+            "get_viewer",
+            "get_repo",
+            "get_issue",
+            "get_pull_request",
+            "get_file_content"
+        ]
     );
     let ghe = exposed.iter().find(|e| e.source.id() == "ghe").unwrap();
     assert_eq!(ghe.operations.len(), 14);

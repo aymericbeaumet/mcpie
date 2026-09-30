@@ -121,3 +121,54 @@ fn broken_pipe_is_success() {
     assert!(status.success(), "status {status}, stderr: {stderr}");
     assert!(stderr.is_empty(), "stderr: {stderr}");
 }
+
+#[test]
+fn mcp_keeps_stdout_for_the_protocol() {
+    use std::io::Read;
+    use std::process::{Command as StdCommand, Stdio};
+    let home = tempfile::tempdir().unwrap();
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("mcpie"))
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .current_dir(home.path())
+        .args([
+            "-v",
+            "mcp",
+            "--sources",
+            "github",
+            "--set",
+            "sources.github.token=t",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdin.take());
+    let status = child.wait().unwrap();
+    let mut stdout = String::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert!(status.success(), "status {status}, stderr: {stderr}");
+    assert!(
+        stdout.is_empty(),
+        "stdout must stay empty for the protocol: {stdout}"
+    );
+    assert!(
+        stderr.contains("serving mcp"),
+        "logs go to stderr: {stderr}"
+    );
+}

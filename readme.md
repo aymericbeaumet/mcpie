@@ -56,6 +56,26 @@ Paginated operations return `next_cursor`; pass it back as `--cursor`, or use `-
 Any operation also accepts `--input '{...}'`, `--input .json` or `--input -` (stdin), and
 `mcpie describe github list-issues` prints the full schema.
 
+## AI agents (MCP)
+
+The same registry is an MCP server. With Claude Code:
+
+```shell
+claude mcp add mcpie -- mcpie mcp
+```
+
+For any other client, run `mcpie mcp` over stdio:
+
+```json
+{ "mcpServers": { "mcpie": { "command": "mcpie", "args": ["mcp"] } } }
+```
+
+Every read operation becomes a tool named `<source>_<operation>` (`github_list_issues`), all
+annotated read-only, plus `search` across every source. Sources without credentials are left
+out. Options: `--sources github,slack`, `--tools 'list_*,github.get_issue'`,
+`--exclude-tools '*_request'`, and `--mode meta` to expose only four tools
+(`list_operations`, `describe_operation`, `call_operation`, `search`) when context is tight.
+
 ## Development
 
 ```shell
