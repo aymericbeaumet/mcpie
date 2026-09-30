@@ -250,10 +250,10 @@ fn builder_registers_github_instances() {
             .iter()
             .map(|o| o.name.as_str())
             .collect::<Vec<_>>(),
-        ["get_viewer"]
+        ["get_viewer", "get_repo", "get_issue", "get_pull_request", "get_file_content"]
     );
     let ghe = exposed.iter().find(|e| e.source.id() == "ghe").unwrap();
-    assert_eq!(ghe.operations.len(), 3);
+    assert_eq!(ghe.operations.len(), 14);
     config
         .sources
         .get_mut("ghe")
@@ -261,4 +261,200 @@ fn builder_registers_github_instances() {
         .extra
         .insert("bogus".into(), json!(1));
     assert!(build(&config).unwrap_err().to_string().contains("bogus"));
+}
+
+fn github_with_defaults(server: &MockServer) -> Registry {
+    let mut config = SourceConfig {
+        token: Some(Secret::new("t")),
+        base_url: Some(server.base_url()),
+        ..SourceConfig::default()
+    };
+    config.extra.insert("default_owner".into(), json!("acme"));
+    config.extra.insert("default_repo".into(), json!("widgets"));
+    let source = Github::new(
+        Settings::new("github", &config, &Config::default().http),
+        &config,
+    )
+    .unwrap();
+    let mut registry = Registry::new();
+    registry
+        .register(Arc::new(source), SourceOptions::default())
+        .unwrap();
+    registry
+}
+
+#[tokio::test]
+async fn repository_operations_use_configured_defaults() {
+    let server = MockServer::start();
+    let issues = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/acme/widgets/issues")
+            .query_param("state", "closed")
+            .query_param("labels", "bug,p1")
+            .query_param("per_page", "5");
+        then.status(200)
+            .json_body(json!([{ "number": 1, "title": "Crash" }]));
+    });
+    let issue = server.mock(|when, then| {
+        when.method(GET).path("/repos/acme/widgets/issues/1");
+        then.status(200)
+            .json_body(json!({ "number": 1, "body": "details" }));
+    });
+    let pulls = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/acme/widgets/pulls")
+            .query_param("base", "main");
+        then.status(200).json_body(json!([{ "number": 2 }]));
+    });
+    let commits = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/acme/widgets/commits")
+            .query_param("path", "src/lib.rs")
+            .query_param("sha", "main");
+        then.status(200).json_body(json!([{ "sha": "abc" }]));
+    });
+    let registry = github_with_defaults(&server);
+    let ctx = CallContext::default();
+    let page = registry
+        .call(
+            "github",
+            "list_issues",
+            json!({ "state": "closed", "labels": "bug,p1", "limit": 5 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert_eq!(page["items"][0]["title"], "Crash");
+    let one = registry
+        .call("github", "get_issue", json!({ "number": 1 }), &ctx)
+        .await
+        .unwrap();
+    assert_eq!(one["body"], "details");
+    let prs = registry
+        .call(
+            "github",
+            "list_pull_requests",
+            json!({ "base": "main" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert_eq!(prs["items"][0]["number"], 2);
+    let log = registry
+        .call(
+            "github",
+            "list_commits",
+            json!({ "path": "src/lib.rs", "sha": "main" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert_eq!(log["items"][0]["sha"], "abc");
+    issues.assert();
+    issue.assert();
+    pulls.assert();
+    commits.assert();
+    let error = registry
+        .call(
+            "github",
+            "get_issue",
+            json!({ "owner": "a/b", "number": 1 }),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, SourceError::InvalidInput(_)), "{error}");
+    let registry = registry_plain(&server);
+    let error = registry
+        .call("github", "get_issue", json!({ "number": 1 }), &ctx)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("default_owner"), "{error}");
+}
+
+fn registry_plain(server: &MockServer) -> Registry {
+    registry(server)
+}
+
+#[tokio::test]
+async fn file_content_is_decoded_and_search_pages_use_items() {
+    let server = MockServer::start();
+    let file = server.mock(|when, then| {
+        when.method(GET).path("/repos/acme/widgets/contents/src/lib.rs").query_param("ref", "v1");
+        then.status(200).json_body(json!({ "type": "file", "encoding": "base64", "content": "aGVsbG8g\nd29ybGQ=\n", "size": 11 }));
+    });
+    let search = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search/issues")
+            .query_param("q", "repo:acme/widgets is:open")
+            .query_param("order", "desc")
+            .query_param("per_page", "1")
+            .query_param("page", "1");
+        then.status(200)
+            .header(
+                "link",
+                format!(
+                    "<{}/search/issues?q=x&per_page=1&page=2>; rel=\"next\"",
+                    server.base_url()
+                ),
+            )
+            .json_body(json!({ "total_count": 2, "items": [{ "number": 9 }] }));
+    });
+    let registry = github_with_defaults(&server);
+    let ctx = CallContext::default();
+    let content = registry
+        .call(
+            "github",
+            "get_file_content",
+            json!({ "path": "/src/lib.rs", "ref": "v1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert_eq!(content["content"], "hello world");
+    assert_eq!(content["encoding"], "utf-8");
+    let page = registry
+        .call(
+            "github",
+            "search_issues",
+            json!({ "query": "repo:acme/widgets is:open", "direction": "desc", "limit": 1 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert_eq!(page["items"][0]["number"], 9);
+    assert!(page["next_cursor"].is_string());
+    file.assert();
+    search.assert();
+    let error = registry
+        .call(
+            "github",
+            "get_file_content",
+            json!({ "path": "../etc" }),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, SourceError::InvalidInput(_)));
+}
+
+#[test]
+fn every_github_operation_is_dispatched() {
+    let server = MockServer::start();
+    let source = github(&server, "t");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    for spec in source.operations() {
+        let error = runtime
+            .block_on(source.call(&spec.name, json!({}), &CallContext::default()))
+            .unwrap_err();
+        assert!(
+            !matches!(error, SourceError::UnknownOperation(_)),
+            "{} is in the spec table but not dispatched",
+            spec.name
+        );
+    }
+    assert_eq!(source.operations().len(), 14);
 }
