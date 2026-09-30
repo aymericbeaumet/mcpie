@@ -1,0 +1,24 @@
+[package]
+name = "mcpie-cli"
+description = "Query Slack, GitHub and other sources through one CLI, MCP server, REST API or GraphQL endpoint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../readme.md"
+keywords = ["mcp", "slack", "github", "cli"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "mcpie"
+path = "main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "string", "env"] }
+mcpie.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

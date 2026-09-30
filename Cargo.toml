@@ -1,0 +1,24 @@
+[workspace]
+members = ["mcpie", "mcpie-cli"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+authors = ["Aymeric Beaumet <hi@aymericbeaumet.com>"]
+license = "MIT"
+repository = "https://github.com/aymericbeaumet/mcpie"
+
+[workspace.dependencies]
+mcpie = { path = "mcpie" }
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+panic = "abort"
+strip = true
