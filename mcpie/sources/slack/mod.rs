@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use self::client::{Client, PageState, params_from_map, token_kind};
+use self::client::{Client, PageCall, PageState, params_from_map, token_kind};
 use self::types::*;
 use super::http::Http;
 use super::{BuildError, Settings};
@@ -65,15 +65,15 @@ impl Slack {
         );
         let (items, next) = self
             .client
-            .call_page(
-                "list_channels",
-                "conversations.list",
+            .call_page(PageCall {
+                operation: "list_channels",
+                method: "conversations.list",
                 params,
-                input.limit,
-                1000,
-                input.cursor.as_deref(),
-                "channels",
-            )
+                limit: input.limit,
+                max_limit: 1000,
+                cursor: input.cursor.as_deref(),
+                items_key: "channels",
+            })
             .await?;
         Ok(Page::new(items, next))
     }
@@ -93,15 +93,15 @@ impl Slack {
         );
         let (items, next) = self
             .client
-            .call_page(
-                "get_channel_history",
-                "conversations.history",
+            .call_page(PageCall {
+                operation: "get_channel_history",
+                method: "conversations.history",
                 params,
-                input.limit,
-                1000,
-                input.cursor.as_deref(),
-                "messages",
-            )
+                limit: input.limit,
+                max_limit: 1000,
+                cursor: input.cursor.as_deref(),
+                items_key: "messages",
+            })
             .await?;
         Ok(Page::new(items, next))
     }
@@ -114,15 +114,15 @@ impl Slack {
         let params = vec![("channel", channel), ("ts", input.ts)];
         let (items, next) = self
             .client
-            .call_page(
-                "get_thread_replies",
-                "conversations.replies",
+            .call_page(PageCall {
+                operation: "get_thread_replies",
+                method: "conversations.replies",
                 params,
-                input.limit,
-                1000,
-                input.cursor.as_deref(),
-                "messages",
-            )
+                limit: input.limit,
+                max_limit: 1000,
+                cursor: input.cursor.as_deref(),
+                items_key: "messages",
+            })
             .await?;
         Ok(Page::new(items, next))
     }
@@ -159,15 +159,15 @@ impl Slack {
     async fn list_users(&self, input: ListUsers) -> Result<Page<Value>, SourceError> {
         let (items, next) = self
             .client
-            .call_page(
-                "list_users",
-                "users.list",
-                Params::new(),
-                input.limit,
-                1000,
-                input.cursor.as_deref(),
-                "members",
-            )
+            .call_page(PageCall {
+                operation: "list_users",
+                method: "users.list",
+                params: Params::new(),
+                limit: input.limit,
+                max_limit: 1000,
+                cursor: input.cursor.as_deref(),
+                items_key: "members",
+            })
             .await?;
         Ok(Page::new(items, next))
     }

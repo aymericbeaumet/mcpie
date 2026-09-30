@@ -64,6 +64,17 @@ pub struct PageState {
     pub page: u32,
 }
 
+/// One cursor-paginated Web API call.
+pub struct PageCall<'a> {
+    pub operation: &'a str,
+    pub method: &'a str,
+    pub params: Vec<(&'static str, String)>,
+    pub limit: Option<u32>,
+    pub max_limit: u32,
+    pub cursor: Option<&'a str>,
+    pub items_key: &'a str,
+}
+
 #[derive(Default)]
 struct Directory {
     fetched: Option<Instant>,
@@ -138,30 +149,28 @@ impl Client {
     /// A cursor-paginated call: wraps Slack's cursor in a source-bound one.
     pub async fn call_page(
         &self,
-        operation: &str,
-        method: &str,
-        mut params: Vec<(&str, String)>,
-        limit: Option<u32>,
-        max_limit: u32,
-        cursor: Option<&str>,
-        items_key: &str,
+        call: PageCall<'_>,
     ) -> Result<(Vec<Value>, Option<String>), SourceError> {
-        if let Some(cursor) = cursor {
-            let state: CursorState = cursor::decode(cursor, &self.id, operation)?;
+        let mut params = call.params;
+        if let Some(cursor) = call.cursor {
+            let state: CursorState = cursor::decode(cursor, &self.id, call.operation)?;
             params.push(("cursor", state.cursor));
         }
         params.push((
             "limit",
-            limit.unwrap_or(100).clamp(1, max_limit).to_string(),
+            call.limit
+                .unwrap_or(100)
+                .clamp(1, call.max_limit)
+                .to_string(),
         ));
-        let (body, _) = self.call(method, &params).await?;
+        let (body, _) = self.call(call.method, &params).await?;
         let items = body
-            .get(items_key)
+            .get(call.items_key)
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
         let next = next_cursor(&body)
-            .map(|c| cursor::encode(&self.id, operation, &CursorState { cursor: c }));
+            .map(|c| cursor::encode(&self.id, call.operation, &CursorState { cursor: c }));
         Ok((items, next))
     }
 
@@ -197,14 +206,6 @@ impl Client {
             .get(&handle.to_lowercase())
             .cloned()
             .ok_or_else(|| SourceError::NotFound(format!("user @{handle}")))
-    }
-
-    /// Display name for a user id, from the directory cache.
-    pub async fn user_name(&self, id: &str) -> Option<String> {
-        if self.refresh_directory().await.is_err() {
-            return None;
-        }
-        self.directory.read().await.user_names.get(id).cloned()
     }
 
     async fn refresh_directory(&self) -> Result<(), SourceError> {
