@@ -207,7 +207,7 @@ pub struct Loaded {
 pub fn load(loader: &Loader) -> Result<Loaded, ConfigError> {
     let user_path = loader.config_path.clone().unwrap_or_else(user_config_path);
     let mut figment = Figment::from(Serialized::defaults(Config::default()));
-    if loader.config_path.is_some() || user_path.is_file() {
+    if user_path.is_file() {
         figment = figment.merge(Toml::file_exact(&user_path));
     }
     let cwd = match &loader.cwd {

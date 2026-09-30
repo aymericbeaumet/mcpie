@@ -57,6 +57,8 @@ pub struct Status {
     /// Credential flavour when the source distinguishes them (`xoxp`, `xoxb`, `pat`).
     pub token_kind: Option<String>,
     pub scopes: Vec<String>,
+    /// Where the credential came from (`config`, `env:GITHUB_TOKEN`, `gh auth token`).
+    pub credential: Option<String>,
     pub warnings: Vec<String>,
     /// Operations this credential cannot use.
     pub unavailable: Vec<String>,

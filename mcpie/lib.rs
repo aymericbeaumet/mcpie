@@ -5,7 +5,9 @@
 //! interfaces are thin projections of that registry. See [`model`] for the registry contract.
 
 pub mod config;
+pub mod facade;
 pub mod model;
+pub mod sources;
 
 /// The program name used in help output, user agents and configuration paths.
 pub const NAME: &str = "mcpie";
