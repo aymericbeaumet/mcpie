@@ -108,6 +108,24 @@ out. Options: `--sources github,slack`, `--tools 'list_*,github.get_issue'`,
 `--exclude-tools '*_request'`, and `--mode meta` to expose only four tools
 (`list_operations`, `describe_operation`, `call_operation`, `search`) when context is tight.
 
+## HTTP: REST, OpenAPI and MCP over HTTP
+
+```shell
+mcpie serve                                   # http://127.0.0.1:7878
+curl localhost:7878/v1/sources
+curl 'localhost:7878/v1/sources/github/list_issues?owner=acme&repo=widgets&limit=5'
+curl -X POST localhost:7878/v1/sources/github/search_issues -d '{"query":"repo:acme/widgets is:open"}'
+curl 'localhost:7878/v1/search?query=release&kinds=issue,message'
+open http://localhost:7878/docs                # OpenAPI 3.1 lives at /openapi.json
+```
+
+The same process serves MCP over streamable HTTP at `/mcp`. Errors share one shape,
+`{"error": {"code", "message", "source", "request_id"}}`, with the same codes as the CLI and MCP.
+
+The server is meant for one machine: it binds `127.0.0.1` by default, rejects requests whose
+`Host` header is not local (a DNS-rebinding guard), and refuses a non-loopback bind unless
+`server.token` is set, in which case every request needs `Authorization: Bearer <token>`.
+
 ## Development
 
 ```shell

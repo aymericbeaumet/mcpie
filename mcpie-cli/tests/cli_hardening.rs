@@ -172,3 +172,73 @@ fn mcp_keeps_stdout_for_the_protocol() {
         "logs go to stderr: {stderr}"
     );
 }
+
+#[test]
+fn serve_answers_rest_and_mcp_over_http() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::process::{Command as StdCommand, Stdio};
+    let home = tempfile::tempdir().unwrap();
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("mcpie"))
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .current_dir(home.path())
+        .args([
+            "serve",
+            "--bind",
+            "127.0.0.1:0",
+            "--sources",
+            "github",
+            "--set",
+            "sources.github.token=t",
+            "--set",
+            "server.token=s3cret",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let mut lines = BufReader::new(stderr).lines();
+    let address = loop {
+        let line = lines.next().expect("serve prints its address").unwrap();
+        if let Some(rest) = line.split("listening on http://").nth(1) {
+            break rest.split_whitespace().next().unwrap().to_owned();
+        }
+    };
+    let request = |raw: &str| -> String {
+        let mut stream = TcpStream::connect(&address).unwrap();
+        stream.write_all(raw.as_bytes()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        response
+    };
+    let health = request("GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    assert!(health.starts_with("HTTP/1.1 200"), "{health}");
+    let denied =
+        request("GET /v1/sources HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    assert!(denied.starts_with("HTTP/1.1 401"), "{denied}");
+    let sources = request(
+        "GET /v1/sources HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer s3cret\r\nConnection: close\r\n\r\n",
+    );
+    assert!(
+        sources.starts_with("HTTP/1.1 200") && sources.contains("\"list_issues\""),
+        "{sources}"
+    );
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}"#;
+    let mcp = request(&format!(
+        "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer s3cret\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    ));
+    assert!(
+        mcp.starts_with("HTTP/1.1 200") && mcp.contains("\"mcpie\""),
+        "{mcp}"
+    );
+    let evil = request("GET /healthz HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n");
+    assert!(evil.starts_with("HTTP/1.1 421"), "{evil}");
+    child.kill().unwrap();
+    child.wait().unwrap();
+}

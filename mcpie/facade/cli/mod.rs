@@ -122,6 +122,34 @@ pub enum StaticCommand {
         #[arg(long)]
         all: bool,
     },
+    /// serve rest, openapi, mcp (and graphql) over http
+    Serve {
+        /// listen address [default: server.bind, 127.0.0.1:7878]
+        #[arg(long, value_name = "HOST:PORT")]
+        bind: Option<String>,
+        /// allow a non-loopback bind without server.token
+        #[arg(long)]
+        insecure_no_auth: bool,
+        /// mcp tool surface at /mcp: tools or meta
+        #[arg(long, value_enum, default_value_t = ModeArg::Tools)]
+        mode: ModeArg,
+        /// only these sources (comma-separated); default: every source with credentials
+        #[arg(long = "sources", value_delimiter = ',', value_name = "ID,ID")]
+        sources: Vec<String>,
+        /// only operations matching these globs
+        #[arg(long = "tools", value_delimiter = ',', value_name = "GLOB,GLOB")]
+        tools: Vec<String>,
+        /// hide operations matching these globs
+        #[arg(
+            long = "exclude-tools",
+            value_delimiter = ',',
+            value_name = "GLOB,GLOB"
+        )]
+        exclude_tools: Vec<String>,
+        /// expose every enabled source, even ones whose credentials are missing
+        #[arg(long)]
+        all: bool,
+    },
     /// show, locate or create the configuration file
     Config {
         #[command(subcommand)]
@@ -365,6 +393,32 @@ where
             .await?;
             write_line(io, &message)
         }
+        Some(StaticCommand::Serve {
+            bind,
+            insecure_no_auth,
+            mode,
+            sources,
+            tools,
+            exclude_tools,
+            all,
+        }) => {
+            let selection =
+                selection_for(&registry, sources, tools, exclude_tools, all, &ctx).await;
+            let options = crate::facade::server::ServeOptions {
+                bind: bind.unwrap_or_else(|| loaded.config.server.bind.clone()),
+                token: loaded.config.server.token.clone().filter(|t| !t.is_empty()),
+                insecure_no_auth,
+                selection,
+                timeout: ctx.timeout,
+                mcp_mode: mode.into(),
+            };
+            let stderr = &mut *io.stderr;
+            crate::facade::server::serve(registry.clone(), options, |addr| {
+                let _ = writeln!(stderr, "{}: listening on http://{addr} (rest /v1, docs /docs, openapi /openapi.json, mcp /mcp)", crate::NAME);
+            })
+            .await
+            .map_err(CliError::Failure)
+        }
         Some(StaticCommand::Mcp {
             mode,
             sources,
@@ -372,29 +426,8 @@ where
             exclude_tools,
             all,
         }) => {
-            let sources = if !sources.is_empty() {
-                Some(sources)
-            } else if all {
-                None
-            } else {
-                let hidden = crate::facade::mcp::unconfigured_sources(&registry, &ctx).await;
-                for id in &hidden {
-                    tracing::info!(source = %id, "hidden: no credentials (use --all or --sources to expose)");
-                }
-                Some(
-                    registry
-                        .sources()
-                        .map(|s| s.id().to_owned())
-                        .filter(|id| !hidden.contains(id))
-                        .collect(),
-                )
-            };
-            let selection = crate::model::Selection {
-                sources,
-                tools,
-                exclude_tools,
-                include_write: false,
-            };
+            let selection =
+                selection_for(&registry, sources, tools, exclude_tools, all, &ctx).await;
             let server = crate::facade::mcp::McpServer::new(
                 registry.clone(),
                 &selection,
@@ -494,6 +527,41 @@ fn init_tracing(verbose: u8) {
         .with_writer(std::io::stderr)
         .with_target(false)
         .try_init();
+}
+
+/// The selection for `mcp` and `serve`: explicit sources win; otherwise every enabled source
+/// whose credentials resolve, or every enabled source with `--all`.
+async fn selection_for(
+    registry: &Registry,
+    sources: Vec<String>,
+    tools: Vec<String>,
+    exclude_tools: Vec<String>,
+    all: bool,
+    ctx: &CallContext,
+) -> crate::model::Selection {
+    let sources = if !sources.is_empty() {
+        Some(sources)
+    } else if all {
+        None
+    } else {
+        let hidden = crate::facade::mcp::unconfigured_sources(registry, ctx).await;
+        for id in &hidden {
+            tracing::info!(source = %id, "hidden: no credentials (use --all or --sources to expose)");
+        }
+        Some(
+            registry
+                .sources()
+                .map(|s| s.id().to_owned())
+                .filter(|id| !hidden.contains(id))
+                .collect(),
+        )
+    };
+    crate::model::Selection {
+        sources,
+        tools,
+        exclude_tools,
+        include_write: false,
+    }
 }
 
 #[cfg(test)]

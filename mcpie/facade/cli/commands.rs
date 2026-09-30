@@ -216,7 +216,7 @@ pub fn describe(registry: &Registry, source: &str, operation: &str) -> Result<Va
         );
         object.insert(
             "rest".into(),
-            Value::String(format!("POST /v1/{source}/{}", spec.name)),
+            Value::String(format!("POST /v1/sources/{source}/{}", spec.name)),
         );
     }
     Ok(value)
