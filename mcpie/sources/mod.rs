@@ -2,6 +2,7 @@
 
 pub mod github;
 pub mod http;
+pub mod linear;
 pub mod slack;
 
 use std::sync::Arc;
@@ -72,7 +73,10 @@ pub fn build(config: &Config) -> Result<Registry, BuildError> {
             "slack" => {
                 registry.register(Arc::new(slack::Slack::new(settings, source)?), options)?
             }
-            "linear" | "gdrive" | "gmail" | "mcp" => {
+            "linear" => {
+                registry.register(Arc::new(linear::Linear::new(settings, source)?), options)?
+            }
+            "gdrive" | "gmail" | "mcp" => {
                 // Source types that are not built yet are known but skipped.
             }
             other => {
