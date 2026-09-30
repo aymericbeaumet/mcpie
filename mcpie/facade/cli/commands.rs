@@ -313,3 +313,84 @@ pub fn completions(
     clap_complete::generate(shell, command, crate::NAME, &mut buffer);
     out.write_all(&buffer).map_err(CliError::from)
 }
+
+/// `mcpie auth <source>`: run the OAuth loopback flow and store the refresh token.
+pub async fn auth(
+    loaded: &Loaded,
+    source: &str,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+    no_browser: bool,
+    stderr: &mut dyn Write,
+) -> Result<String, CliError> {
+    use crate::sources::google::{self, oauth};
+    let kind = loaded
+        .config
+        .source_type(source)
+        .ok_or_else(|| CliError::Usage(format!("unknown source {source:?}")))?;
+    let scope = google::scope_for(kind).ok_or_else(|| {
+        CliError::Usage(format!(
+            "source {source:?} is {kind}; only gdrive and gmail use `mcpie auth`"
+        ))
+    })?;
+    let source_config = &loaded.config.sources[source];
+    let extra: google::Extra = source_config.extra().map_err(CliError::Failure)?;
+    let (client_id, client_secret) = match (client_id, client_secret, &extra.oauth) {
+        (Some(id), Some(secret), _) => (id, crate::config::Secret::new(secret)),
+        (None, None, Some(oauth)) => (oauth.client_id.clone(), oauth.client_secret.clone()),
+        (Some(id), None, Some(oauth)) => (id, oauth.client_secret.clone()),
+        (None, Some(secret), Some(oauth)) => {
+            (oauth.client_id.clone(), crate::config::Secret::new(secret))
+        }
+        _ => {
+            return Err(CliError::Usage(
+                "an OAuth client is required: create a Desktop app client in Google Cloud (APIs & Services > Credentials), \
+                 then pass --client-id and --client-secret or set sources.<id>.oauth"
+                    .into(),
+            ));
+        }
+    };
+    let authorization = oauth::Authorization {
+        client_id: client_id.clone(),
+        client_secret: client_secret.clone(),
+        scopes: vec![scope.to_owned()],
+        auth_url: extra
+            .auth_url
+            .clone()
+            .unwrap_or_else(|| google::AUTH_URL.to_owned()),
+        token_url: extra
+            .token_url
+            .clone()
+            .unwrap_or_else(|| google::TOKEN_URL.to_owned()),
+    };
+    let http = crate::sources::http::Http::new("", Duration::from_secs(30), 2)
+        .map_err(|e| CliError::Failure(e.to_string()))?;
+    let tokens = oauth::authorize(
+        &http,
+        &authorization,
+        |url| {
+            let _ = writeln!(stderr, "open this url to authorize {source}:\n\n  {url}\n");
+            if !no_browser && open::that_detached(url).is_err() {
+                let _ = writeln!(stderr, "(could not open a browser; paste the url manually)");
+            }
+            let _ = writeln!(stderr, "waiting for the browser to redirect back...");
+        },
+        Duration::from_secs(300),
+    )
+    .await?;
+    let refresh_token = tokens
+        .refresh_token
+        .ok_or_else(|| CliError::Failure("google returned no refresh token; revoke mcpie's access in your google account and retry".into()))?;
+    oauth::save(
+        &loaded.user_path,
+        source,
+        &client_id,
+        &client_secret,
+        &refresh_token,
+    )
+    .map_err(CliError::Failure)?;
+    Ok(format!(
+        "authorized {source}; refresh token saved to {}",
+        loaded.user_path.display()
+    ))
+}

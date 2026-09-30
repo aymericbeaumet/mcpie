@@ -1,6 +1,7 @@
 //! Built-in source types and the registry builder that instantiates them from configuration.
 
 pub mod github;
+pub mod google;
 pub mod http;
 pub mod linear;
 pub mod slack;
@@ -76,7 +77,15 @@ pub fn build(config: &Config) -> Result<Registry, BuildError> {
             "linear" => {
                 registry.register(Arc::new(linear::Linear::new(settings, source)?), options)?
             }
-            "gdrive" | "gmail" | "mcp" => {
+            "gdrive" => registry.register(
+                Arc::new(google::drive::Drive::new(settings, source)?),
+                options,
+            )?,
+            "gmail" => registry.register(
+                Arc::new(google::gmail::Gmail::new(settings, source)?),
+                options,
+            )?,
+            "mcp" => {
                 // Source types that are not built yet are known but skipped.
             }
             other => {

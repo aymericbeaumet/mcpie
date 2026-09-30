@@ -86,6 +86,20 @@ pub enum StaticCommand {
         #[arg(long)]
         raw: bool,
     },
+    /// authorize a source through the browser and store its refresh token
+    Auth {
+        /// source id (gdrive or gmail)
+        source: String,
+        /// oauth client id (defaults to the source's configured oauth.client_id)
+        #[arg(long, value_name = "ID")]
+        client_id: Option<String>,
+        /// oauth client secret (defaults to the source's configured oauth.client_secret)
+        #[arg(long, value_name = "SECRET")]
+        client_secret: Option<String>,
+        /// print the consent url instead of opening a browser
+        #[arg(long)]
+        no_browser: bool,
+    },
     /// serve the registry as an mcp server over stdin/stdout
     Mcp {
         /// tools: one tool per operation; meta: list_operations, describe_operation, call_operation
@@ -333,6 +347,23 @@ async fn run_inner(
             } else {
                 Ok(())
             }
+        }
+        Some(StaticCommand::Auth {
+            source,
+            client_id,
+            client_secret,
+            no_browser,
+        }) => {
+            let message = commands::auth(
+                &loaded,
+                &source,
+                client_id,
+                client_secret,
+                no_browser,
+                io.stderr,
+            )
+            .await?;
+            write_line(io, &message)
         }
         Some(StaticCommand::Mcp {
             mode,
