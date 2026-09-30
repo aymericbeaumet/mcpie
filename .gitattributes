@@ -1,0 +1,2 @@
+# Keep LF everywhere so fixtures and templates compare byte-for-byte on every OS.
+* text=auto eol=lf
