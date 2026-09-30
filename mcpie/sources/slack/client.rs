@@ -208,6 +208,14 @@ impl Client {
             .ok_or_else(|| SourceError::NotFound(format!("user @{handle}")))
     }
 
+    /// Display name for a user id, from the directory cache.
+    pub async fn user_name(&self, id: &str) -> Option<String> {
+        if self.refresh_directory().await.is_err() {
+            return None;
+        }
+        self.directory.read().await.user_names.get(id).cloned()
+    }
+
     async fn refresh_directory(&self) -> Result<(), SourceError> {
         if self
             .directory

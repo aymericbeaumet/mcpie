@@ -1,6 +1,7 @@
 //! Slack over the Web API.
 
 mod client;
+mod normalize;
 pub mod types;
 
 use async_trait::async_trait;
@@ -12,7 +13,9 @@ use self::types::*;
 use super::http::Http;
 use super::{BuildError, Settings};
 use crate::config::SourceConfig;
-use crate::model::{CallContext, OperationSpec, Page, Source, SourceError, Status, cursor, typed};
+use crate::model::{
+    CallContext, OperationSpec, Page, SearchProvider, Source, SourceError, Status, cursor, typed,
+};
 
 /// Type-specific settings under `[sources.<id>]`.
 #[derive(Debug, Default, Deserialize)]
@@ -281,6 +284,10 @@ impl Source for Slack {
 
     fn operations(&self) -> &[OperationSpec] {
         &self.operations
+    }
+
+    fn search(&self) -> Option<&dyn SearchProvider> {
+        Some(self)
     }
 
     async fn call(

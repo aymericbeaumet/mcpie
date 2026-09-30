@@ -4,11 +4,14 @@ use async_trait::async_trait;
 use base64::Engine;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::{Extra, GoogleClient, PageCall};
 use crate::config::SourceConfig;
-use crate::model::{CallContext, OperationSpec, Page, Source, SourceError, Status, typed};
+use crate::model::{
+    CallContext, Item, ItemKind, OperationRef, OperationSpec, Page, SearchProvider, SearchQuery,
+    Source, SourceError, Status, normalized, typed,
+};
 use crate::sources::http::Http;
 use crate::sources::{BuildError, Settings};
 
@@ -366,6 +369,10 @@ impl Source for Drive {
         &self.operations
     }
 
+    fn search(&self) -> Option<&dyn SearchProvider> {
+        Some(self)
+    }
+
     async fn call(
         &self,
         operation: &str,
@@ -408,5 +415,86 @@ impl Source for Drive {
             warnings: Vec::new(),
             unavailable: Vec::new(),
         })
+    }
+}
+
+/// A Drive file as a normalized document.
+pub fn file_item(source: &str, file: &Value) -> Option<Item> {
+    let id = file.get("id")?.as_str()?;
+    let mime = file.get("mimeType").and_then(Value::as_str).unwrap_or("");
+    let owner = file
+        .get("owners")
+        .and_then(Value::as_array)
+        .and_then(|o| o.first())
+        .and_then(|o| o.get("displayName"))
+        .and_then(Value::as_str);
+    let fetch = if mime == "application/vnd.google-apps.folder" {
+        OperationRef {
+            source: source.to_owned(),
+            operation: "list_files".into(),
+            input: json!({ "folder": id }),
+        }
+    } else if mime.starts_with("application/vnd.google-apps.") {
+        OperationRef {
+            source: source.to_owned(),
+            operation: "export_file".into(),
+            input: json!({ "file": id }),
+        }
+    } else {
+        OperationRef {
+            source: source.to_owned(),
+            operation: "get_file_content".into(),
+            input: json!({ "file": id }),
+        }
+    };
+    Some(Item {
+        kind: ItemKind::Document,
+        source: source.to_owned(),
+        id: id.to_owned(),
+        title: file.get("name").and_then(Value::as_str).map(str::to_owned),
+        snippet: normalized::snippet(
+            &format!(
+                "{mime}{}",
+                owner.map(|o| format!(", owned by {o}")).unwrap_or_default()
+            ),
+            200,
+        ),
+        url: file
+            .get("webViewLink")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        author: owner.map(str::to_owned),
+        updated_at: file.get("modifiedTime").and_then(normalized::parse_time),
+        fetch: Some(fetch),
+        raw: Some(file.clone()),
+    })
+}
+
+#[async_trait]
+impl SearchProvider for Drive {
+    async fn search(
+        &self,
+        query: &SearchQuery,
+        _ctx: &CallContext,
+    ) -> Result<Vec<Item>, SourceError> {
+        if query
+            .kinds
+            .as_ref()
+            .is_some_and(|kinds| !kinds.contains(&ItemKind::Document))
+        {
+            return Ok(Vec::new());
+        }
+        let page = self
+            .search_files(SearchFiles {
+                query: query.query.clone(),
+                limit: Some(query.effective_limit() as u32),
+                cursor: None,
+            })
+            .await?;
+        Ok(page
+            .items
+            .iter()
+            .filter_map(|f| file_item(&self.id, f))
+            .collect())
     }
 }

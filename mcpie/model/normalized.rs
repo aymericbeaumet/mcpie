@@ -99,3 +99,85 @@ pub trait SearchProvider: Send + Sync {
         ctx: &CallContext,
     ) -> Result<Vec<Item>, SourceError>;
 }
+
+/// Collapse whitespace and cut to `max_chars`, marking the cut with an ellipsis.
+pub fn snippet(text: &str, max_chars: usize) -> String {
+    let collapsed: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= max_chars {
+        return collapsed;
+    }
+    let mut cut: String = collapsed
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect();
+    cut.push('…');
+    cut
+}
+
+/// Parse the timestamp formats upstreams use: RFC 3339, unix seconds (possibly fractional, as
+/// Slack sends them), or unix milliseconds (as Gmail sends them).
+pub fn parse_time(value: &Value) -> Option<DateTime<Utc>> {
+    match value {
+        Value::String(text) => {
+            let text = text.trim();
+            if let Ok(parsed) = DateTime::parse_from_rfc3339(text) {
+                return Some(parsed.with_timezone(&Utc));
+            }
+            if let Ok(number) = text.parse::<f64>() {
+                return from_unix(number);
+            }
+            chrono::DateTime::parse_from_rfc2822(text)
+                .ok()
+                .map(|t| t.with_timezone(&Utc))
+        }
+        Value::Number(number) => number.as_f64().and_then(from_unix),
+        _ => None,
+    }
+}
+
+fn from_unix(number: f64) -> Option<DateTime<Utc>> {
+    // Anything past year 2286 in seconds is milliseconds.
+    let seconds = if number > 1e11 {
+        number / 1000.0
+    } else {
+        number
+    };
+    let whole = seconds.trunc() as i64;
+    let nanos = ((seconds - seconds.trunc()) * 1e9) as u32;
+    DateTime::from_timestamp(whole, nanos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snippets_and_times() {
+        assert_eq!(snippet("  a\n\nb   c ", 10), "a b c");
+        assert_eq!(snippet("abcdefghij", 5), "abcd…");
+        assert_eq!(
+            parse_time(&Value::String("2026-01-02T03:04:05Z".into()))
+                .unwrap()
+                .to_rfc3339(),
+            "2026-01-02T03:04:05+00:00"
+        );
+        assert_eq!(
+            parse_time(&Value::String("1700000000.123456".into()))
+                .unwrap()
+                .timestamp(),
+            1700000000
+        );
+        assert_eq!(
+            parse_time(&Value::String("1700000000123".into()))
+                .unwrap()
+                .timestamp(),
+            1700000000
+        );
+        assert_eq!(
+            parse_time(&Value::from(1700000000)).unwrap().timestamp(),
+            1700000000
+        );
+        assert!(parse_time(&Value::String("Tue, 1 Jul 2003 10:52:37 +0200".into())).is_some());
+        assert!(parse_time(&Value::String("nope".into())).is_none());
+    }
+}

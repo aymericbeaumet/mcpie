@@ -8,7 +8,10 @@ use serde_json::{Map, Value, json};
 
 use super::{Extra, GoogleClient, PageCall};
 use crate::config::SourceConfig;
-use crate::model::{CallContext, OperationSpec, Page, Source, SourceError, Status, typed};
+use crate::model::{
+    CallContext, Item, ItemKind, OperationRef, OperationSpec, Page, SearchProvider, SearchQuery,
+    Source, SourceError, Status, normalized, typed,
+};
 use crate::sources::http::Http;
 use crate::sources::{BuildError, Settings};
 
@@ -412,6 +415,10 @@ impl Source for Gmail {
         &self.operations
     }
 
+    fn search(&self) -> Option<&dyn SearchProvider> {
+        Some(self)
+    }
+
     async fn call(
         &self,
         operation: &str,
@@ -445,6 +452,68 @@ impl Source for Gmail {
             warnings: Vec::new(),
             unavailable: Vec::new(),
         })
+    }
+}
+
+/// A hydrated Gmail message as a normalized message.
+pub fn message_item(source: &str, message: &Value) -> Option<Item> {
+    let id = message.get("id")?.as_str()?;
+    let subject = message
+        .get("subject")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let snippet = message.get("snippet").and_then(Value::as_str).unwrap_or("");
+    let updated_at = message
+        .get("internalDate")
+        .and_then(normalized::parse_time)
+        .or_else(|| message.get("date").and_then(normalized::parse_time));
+    Some(Item {
+        kind: ItemKind::Message,
+        source: source.to_owned(),
+        id: id.to_owned(),
+        title: subject,
+        snippet: normalized::snippet(snippet, 200),
+        url: Some(format!("https://mail.google.com/mail/u/0/#all/{id}")),
+        author: message
+            .get("from")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        updated_at,
+        fetch: Some(OperationRef {
+            source: source.to_owned(),
+            operation: "get_message".into(),
+            input: json!({ "message": id }),
+        }),
+        raw: Some(message.clone()),
+    })
+}
+
+#[async_trait]
+impl SearchProvider for Gmail {
+    async fn search(
+        &self,
+        query: &SearchQuery,
+        _ctx: &CallContext,
+    ) -> Result<Vec<Item>, SourceError> {
+        if query
+            .kinds
+            .as_ref()
+            .is_some_and(|kinds| !kinds.contains(&ItemKind::Message))
+        {
+            return Ok(Vec::new());
+        }
+        let page = self
+            .search_messages(SearchMessages {
+                query: query.query.clone(),
+                limit: Some(query.effective_limit() as u32),
+                cursor: None,
+            })
+            .await?;
+        Ok(page
+            .items
+            .iter()
+            .filter_map(|m| message_item(&self.id, m))
+            .collect())
     }
 }
 
