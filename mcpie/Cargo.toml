@@ -16,6 +16,8 @@ name = "mcpie"
 path = "lib.rs"
 
 [dependencies]
+async-graphql = { version = "7.2", features = ["dynamic-schema"] }
+async-graphql-axum = "7.2"
 async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"

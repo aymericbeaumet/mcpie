@@ -102,13 +102,16 @@ pub struct ServeOptions {
     pub mcp_mode: Mode,
 }
 
-/// Assemble the application: REST routes, the MCP endpoint, and the guard layers.
-pub fn app(state: Arc<AppState>, mcp: Option<Router>) -> Router {
+/// Assemble the application: REST routes, GraphQL, the MCP endpoint, and the guard layers.
+pub fn app(state: Arc<AppState>, mcp: Option<Router>) -> Result<Router, String> {
     let mut router = rest::routes(state.clone());
+    router = router.merge(super::graphql::routes(super::graphql::schema(
+        state.clone(),
+    )?));
     if let Some(mcp) = mcp {
         router = router.merge(mcp);
     }
-    router
+    Ok(router
         .layer(middleware::from_fn_with_state(state.clone(), bearer_guard))
         .layer(middleware::from_fn_with_state(state.clone(), host_guard))
         .layer(middleware::from_fn(request_id))
@@ -116,7 +119,7 @@ pub fn app(state: Arc<AppState>, mcp: Option<Router>) -> Router {
             tower_http::trace::TraceLayer::new_for_http().on_response(
                 tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO),
             ),
-        )
+        ))
 }
 
 /// The MCP endpoint at `/mcp`, one handler per session.
@@ -286,7 +289,7 @@ pub async fn serve(
     )
     .map_err(|e| e.to_string())?;
     let mcp = mcp_router(&state, options.selection.clone(), options.mcp_mode);
-    let application = app(state, Some(mcp));
+    let application = app(state, Some(mcp))?;
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|e| format!("cannot bind {addr}: {e}"))?;

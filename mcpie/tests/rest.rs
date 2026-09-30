@@ -37,7 +37,7 @@ async fn send(
     state: Arc<AppState>,
     request: Request<Body>,
 ) -> (StatusCode, axum::http::HeaderMap, Value) {
-    let response = app(state, None).oneshot(request).await.unwrap();
+    let response = app(state, None).unwrap().oneshot(request).await.unwrap();
     let status = response.status();
     let headers = response.headers().clone();
     (status, headers, body_json(response).await)
@@ -194,7 +194,11 @@ async fn openapi_and_docs_describe_the_registry() {
     assert!(body["paths"]["/v1/search"]["post"].is_object());
     assert!(body["components"]["schemas"]["SearchResult"].is_object());
     assert_eq!(body["security"][0]["bearerAuth"], json!([]));
-    let response = app(state(None), None).oneshot(get("/docs")).await.unwrap();
+    let response = app(state(None), None)
+        .unwrap()
+        .oneshot(get("/docs"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert!(
         response

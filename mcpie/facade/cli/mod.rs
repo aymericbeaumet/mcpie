@@ -414,7 +414,7 @@ where
             };
             let stderr = &mut *io.stderr;
             crate::facade::server::serve(registry.clone(), options, |addr| {
-                let _ = writeln!(stderr, "{}: listening on http://{addr} (rest /v1, docs /docs, openapi /openapi.json, mcp /mcp)", crate::NAME);
+                let _ = writeln!(stderr, "{}: listening on http://{addr} (rest /v1, graphql /graphql, docs /docs, openapi /openapi.json, mcp /mcp)", crate::NAME);
             })
             .await
             .map_err(CliError::Failure)
