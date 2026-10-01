@@ -1,0 +1,53 @@
+[package]
+name = "mcpie"
+description = "Query Slack, GitHub and other sources through one CLI, MCP server, REST API or GraphQL endpoint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../readme.md"
+keywords = ["mcp", "slack", "github", "graphql", "rest"]
+categories = ["api-bindings", "web-programming"]
+
+[lib]
+name = "mcpie"
+path = "lib.rs"
+
+[dependencies]
+async-graphql = { version = "7.2", features = ["dynamic-schema"] }
+async-graphql-axum = "7.2"
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+clap = { version = "4", features = ["derive", "env", "string"] }
+clap_complete = "4"
+figment = { version = "0.10", features = ["env", "toml"] }
+form_urlencoded = "1"
+futures = "0.3"
+globset = "0.4"
+open = "5"
+rmcp = { version = "3.5", default-features = false, features = ["client", "server", "transport-async-rw", "transport-child-process", "transport-io", "transport-streamable-http-client-reqwest", "transport-streamable-http-server"] }
+reqwest = { version = "0.13", default-features = false, features = ["charset", "form", "gzip", "http2", "json", "query", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+schemars = { version = "1", features = ["chrono04"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "process", "rt", "signal", "sync", "time"] }
+toml = "1"
+toml_edit = "0.25"
+tower-http = { version = "0.7", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+form_urlencoded = "1"
+tower = { version = "0.5", features = ["util"] }
+globset = "0.4"
+httpmock = "0.8"
+figment = { version = "0.10", features = ["env", "test", "toml"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

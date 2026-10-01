@@ -1,0 +1,113 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: version
+        run: |
+          last="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+          if [ -z "$last" ]; then
+            version="$(perl -ne 'print $1 if /^version = "(.*)"/' Cargo.toml)"
+          else
+            IFS=. read -r major minor patch <<< "${last#v}"
+            log="$(git log "$last"..HEAD --format='%s%n%b')"
+            if grep -qE '^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE' <<< "$log"; then
+              major=$((major + 1)); minor=0; patch=0
+            elif grep -qE '^feat(\([^)]*\))?:' <<< "$log"; then
+              minor=$((minor + 1)); patch=0
+            else
+              patch=$((patch + 1))
+            fi
+            version="$major.$minor.$patch"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.name }})
+    needs: [test, version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-amd64, os: ubuntu-latest }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+          - { name: darwin-amd64, os: macos-15-intel }
+          - { name: darwin-arm64, os: macos-latest }
+          - { name: windows-amd64, os: windows-latest }
+          - { name: windows-arm64, os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Stamp the computed version (not committed) so `mcpie --version` reports it.
+      - shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: perl -pi -e 's/^version = ".*"/version = "$ENV{VERSION}"/' Cargo.toml
+      - run: cargo build --release -p mcpie-cli
+      - shell: bash
+        env:
+          ARCHIVE: mcpie-${{ matrix.name }}
+        run: |
+          mkdir dist
+          if [[ "$ARCHIVE" == mcpie-windows-* ]]; then
+            (cd target/release && 7z a "../../dist/$ARCHIVE.zip" mcpie.exe)
+          else
+            tar -C target/release -czf "dist/$ARCHIVE.tar.gz" mcpie
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcpie-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: |
+          cd dist
+          for name in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            test -f "mcpie-$name.tar.gz" || { echo "missing mcpie-$name.tar.gz"; exit 1; }
+          done
+          for name in windows-amd64 windows-arm64; do
+            test -f "mcpie-$name.zip" || { echo "missing mcpie-$name.zip"; exit 1; }
+          done
+          sha256sum -- * > SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --generate-notes \
+            dist/*
