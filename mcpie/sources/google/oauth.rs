@@ -262,6 +262,7 @@ pub fn save(
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
+    #[cfg(unix)]
     let is_new = !config_path.exists();
     std::fs::write(config_path, document.to_string())
         .map_err(|e| format!("{}: {e}", config_path.display()))?;

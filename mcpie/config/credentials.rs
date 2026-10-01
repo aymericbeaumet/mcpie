@@ -189,8 +189,10 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(error, SourceError::NotConfigured(_)), "{error}");
+        // A command that succeeds and prints nothing (`cmd /C echo` would print "ECHO is on.").
+        let silent = if cfg!(windows) { "rem" } else { "true" };
         let error = resolve(CredentialSpec {
-            token_command: Some("echo"),
+            token_command: Some(silent),
             ..Default::default()
         })
         .await
