@@ -7,6 +7,7 @@ fn mcpie(home: &std::path::Path) -> Command {
     command
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(platform_env())
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join("config"))
         .current_dir(home);
@@ -98,6 +99,7 @@ fn broken_pipe_is_success() {
     let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("mcpie"))
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(platform_env())
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join("config"))
         .current_dir(home.path())
@@ -130,6 +132,7 @@ fn mcp_keeps_stdout_for_the_protocol() {
     let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("mcpie"))
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(platform_env())
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join("config"))
         .current_dir(home.path())
@@ -182,6 +185,7 @@ fn serve_answers_rest_and_mcp_over_http() {
     let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("mcpie"))
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(platform_env())
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join("config"))
         .current_dir(home.path())
@@ -241,4 +245,14 @@ fn serve_answers_rest_and_mcp_over_http() {
     assert!(evil.starts_with("HTTP/1.1 421"), "{evil}");
     child.kill().unwrap();
     child.wait().unwrap();
+}
+
+/// Variables the OS needs even in a cleared environment: Winsock cannot open sockets without
+/// `SystemRoot`, and Windows temp-file APIs read `TEMP`/`TMP`.
+fn platform_env() -> Vec<(String, std::ffi::OsString)> {
+    ["SystemRoot", "SYSTEMROOT", "windir", "TEMP", "TMP"]
+        .iter()
+        .filter(|_| cfg!(windows))
+        .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_owned(), value)))
+        .collect()
 }

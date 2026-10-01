@@ -6,6 +6,7 @@ fn mcpie(home: &std::path::Path) -> Command {
     command
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(platform_env())
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join("config"))
         .current_dir(home);
@@ -115,4 +116,14 @@ fn custom_mcp_servers_become_sources() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("command"));
+}
+
+/// Variables the OS needs even in a cleared environment: Winsock cannot open sockets without
+/// `SystemRoot`, and Windows temp-file APIs read `TEMP`/`TMP`.
+fn platform_env() -> Vec<(String, std::ffi::OsString)> {
+    ["SystemRoot", "SYSTEMROOT", "windir", "TEMP", "TMP"]
+        .iter()
+        .filter(|_| cfg!(windows))
+        .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_owned(), value)))
+        .collect()
 }
