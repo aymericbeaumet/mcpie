@@ -13,3 +13,6 @@ Thumbs.db
 
 # Proptest
 proptest-regressions/
+
+# Commit the lockfile even when a global gitignore excludes *.lock.
+!Cargo.lock
